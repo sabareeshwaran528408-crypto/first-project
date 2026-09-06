@@ -1,0 +1,168 @@
+// Google Apps Script - LinkedIn Audit Form Backend
+// SETUP INSTRUCTIONS:
+// 1. Open https://script.google.com
+// 2. Create New Project
+// 3. Copy & paste this entire code
+// 4. Save (Ctrl+S)
+// 5. DEPLOY AS WEB APP:
+//    - Click "Deploy" → "New Deployment"
+//    - Type: "Web app"
+//    - Execute as: [Your Email/Account]
+//    - Allow access: "Anyone"
+// 6. Copy the deployment URL
+// 7. Replace the URL in index.html's APP_SCRIPT_URL variable
+// 8. In browser console, run: setSpreadsheetId('YOUR_SHEET_ID')
+//    (Get sheet ID from: https://docs.google.com/spreadsheets/d/SHEET_ID/edit)
+
+function doGet(e) {
+  return handleRequest(e.parameter);
+}
+
+function doPost(e) {
+  try {
+    const params = JSON.parse(e.postData.contents);
+    return handleRequest(params);
+  } catch (err) {
+    return createResponse(false, 'Invalid JSON: ' + err.toString());
+  }
+}
+
+function handleRequest(params) {
+  try {
+    const name = (params.name || '').trim();
+    const email = (params.email || '').trim();
+    const phone = (params.phone || '').trim();
+
+    // Validate
+    if (!name || !email || !phone) {
+      return createResponse(false, 'All fields required: name, email, phone');
+    }
+
+    if (!isValidEmail(email)) {
+      return createResponse(false, 'Invalid email format');
+    }
+
+    // Get or create sheet
+    const sheet = getOrCreateSheet();
+    
+    // Append row
+    const timestamp = new Date().toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+
+    const lastRow = sheet.getLastRow();
+    sheet.getRange(lastRow + 1, 1, 1, 4).setValues([
+      [timestamp, name, email, phone]
+    ]);
+
+    // Log success
+    Logger.log(`Form submitted: ${name} | ${email} | ${phone}`);
+    
+    return createResponse(true, 'Form submitted successfully');
+  } catch (error) {
+    Logger.log('Error: ' + error.toString());
+    return createResponse(false, 'Server error: ' + error.toString());
+  }
+}
+
+function getOrCreateSheet() {
+  const spreadsheetId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+  
+  if (!spreadsheetId) {
+    throw new Error('SPREADSHEET_ID not configured. Run setSpreadsheetId(id) first.');
+  }
+
+  const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+  let sheet = spreadsheet.getSheetByName('Responses');
+
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet('Responses');
+    
+    // Add headers
+    sheet.getRange(1, 1, 1, 4).setValues([
+      ['Timestamp', 'Name', 'Email', 'Phone']
+    ]);
+    
+    // Format headers
+    const headerRange = sheet.getRange(1, 1, 1, 4);
+    headerRange.setFontWeight('bold');
+    headerRange.setBackground('#005eb5');
+    headerRange.setFontColor('#ffffff');
+    
+    // Set column widths
+    sheet.setColumnWidth(1, 180);
+    sheet.setColumnWidth(2, 150);
+    sheet.setColumnWidth(3, 200);
+    sheet.setColumnWidth(4, 150);
+  }
+
+  return sheet;
+}
+
+function createResponse(success, message) {
+  return ContentService
+    .createTextOutput(JSON.stringify({
+      success: success,
+      message: message,
+      timestamp: new Date().toISOString()
+    }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function isValidEmail(email) {
+  const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return regex.test(email);
+}
+
+// CONFIGURATION HELPERS
+// Run these in the browser console after deploying:
+
+/**
+ * Set the Google Sheet ID where responses will be saved
+ * Find your sheet ID here: https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit
+ * Usage: setSpreadsheetId('1a2b3c...')
+ */
+function setSpreadsheetId(id) {
+  PropertiesService.getScriptProperties().setProperty('SPREADSHEET_ID', id);
+  Logger.log('✓ Spreadsheet ID set: ' + id);
+  return 'Spreadsheet ID configured successfully. Refresh your form page.';
+}
+
+/**
+ * Get the currently configured Spreadsheet ID
+ */
+function getSpreadsheetId() {
+  const id = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+  Logger.log('Current SPREADSHEET_ID: ' + (id || 'NOT SET'));
+  return id;
+}
+
+/**
+ * Test the deployment
+ * Check if everything is working
+ */
+function testDeployment() {
+  Logger.log('=== DEPLOYMENT TEST ===');
+  
+  const spreadsheetId = getSpreadsheetId();
+  Logger.log('1. Spreadsheet ID: ' + (spreadsheetId ? '✓ SET' : '✗ NOT SET'));
+  
+  if (spreadsheetId) {
+    try {
+      const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+      const sheetName = spreadsheet.getSheetByName('Responses') ? 'Responses' : 'Creating...';
+      Logger.log('2. Sheet access: ✓ OK');
+      Logger.log('3. Sheet "Responses": ' + sheetName);
+    } catch (e) {
+      Logger.log('2. Sheet access: ✗ ERROR - ' + e.toString());
+    }
+  }
+  
+  Logger.log('=== Check Apps Script logs for details ===');
+}
